@@ -50,7 +50,7 @@ export function Hero() {
           <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl">
             Capture leads, run pipelines, and book meetings from one clean
             workspace. Built for small teams who&apos;d rather close than
-            configure — and ready to replace five tools with one!
+            configure — and ready to replace five tools with one.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
