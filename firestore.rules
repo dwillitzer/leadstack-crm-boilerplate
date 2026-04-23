@@ -1,0 +1,101 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwner(resource) {
+      return isAuthed() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function incomingIsOwner() {
+      return isAuthed() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // User profile docs — each user can read/write only their own.
+    match /users/{userId} {
+      allow read, write: if isAuthed() && request.auth.uid == userId;
+    }
+
+    // Mail queue for the Firebase "Trigger Email" extension.
+    // Authed users can enqueue mail; they can't read the queue.
+    match /mail/{mailId} {
+      allow create: if isAuthed();
+      allow read, update, delete: if false;
+    }
+
+    // Contacts — owned by the user who created them.
+    match /contacts/{contactId} {
+      allow read: if isOwner(resource);
+      allow create: if incomingIsOwner();
+      allow update: if isOwner(resource) && incomingIsOwner();
+      allow delete: if isOwner(resource);
+
+      // Notes subcollection — reuses parent ownership.
+      match /notes/{noteId} {
+        allow read, write: if isAuthed()
+          && get(/databases/$(database)/documents/contacts/$(contactId)).data.ownerId == request.auth.uid;
+      }
+
+      // Activities subcollection (typed events: pipeline_moved, booking_created, etc.)
+      match /activities/{activityId} {
+        allow read, write: if isAuthed()
+          && get(/databases/$(database)/documents/contacts/$(contactId)).data.ownerId == request.auth.uid;
+      }
+    }
+
+    // Deals — owned by the user who created them. One contact → many deals.
+    match /deals/{dealId} {
+      allow read: if isOwner(resource);
+      allow create: if incomingIsOwner();
+      allow update: if isOwner(resource) && incomingIsOwner();
+      allow delete: if isOwner(resource);
+    }
+
+    // Calendar events — owned by the user who created them. Manual entry only (no OAuth).
+    match /events/{eventId} {
+      allow read: if isOwner(resource);
+      allow create: if incomingIsOwner();
+      allow update: if isOwner(resource) && incomingIsOwner();
+      allow delete: if isOwner(resource);
+    }
+
+    // Tasks — owned by the user. Can link to a contact / deal / event.
+    match /tasks/{taskId} {
+      allow read: if isOwner(resource);
+      allow create: if incomingIsOwner();
+      allow update: if isOwner(resource) && incomingIsOwner();
+      allow delete: if isOwner(resource);
+    }
+
+    // Forms — owned by the user. Submissions subcollection writes come from
+    // the server-side admin SDK (bypasses these rules), so clients can't write submissions.
+    match /forms/{formId} {
+      allow read: if isOwner(resource);
+      allow create: if incomingIsOwner();
+      allow update: if isOwner(resource) && incomingIsOwner();
+      allow delete: if isOwner(resource);
+
+      match /submissions/{submissionId} {
+        allow read: if isAuthed()
+          && get(/databases/$(database)/documents/forms/$(formId)).data.ownerId == request.auth.uid;
+        allow write: if false; // server-only via admin SDK
+      }
+    }
+
+    // Usage counters — server writes via admin SDK (email + SMS sends);
+    // owner can read their own monthly totals for quota UIs.
+    match /usage/{uid} {
+      allow read: if isAuthed() && request.auth.uid == uid;
+      allow write: if false; // server-only via admin SDK
+    }
+
+    // Default: deny everything else.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
